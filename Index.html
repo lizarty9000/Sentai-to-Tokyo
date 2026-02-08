@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雪國行程與記帳 Master</title>
+    <style>
+        :root { --gold: #D4AF37; --brown: #3E2723; --bg: #FDFBF7; --card: #FFFFFF; }
+        body { margin: 0; font-family: -apple-system, sans-serif; background: var(--bg); color: var(--brown); padding-bottom: 80px; }
+        .header { background: #fff; padding: 15px; border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between; }
+        .btn { background: var(--gold); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .content { padding: 15px; }
+        .day-group { margin-bottom: 30px; }
+        .day-title { font-size: 1.3rem; font-weight: bold; border-left: 6px solid var(--gold); padding-left: 12px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; background: #eee; padding-top:5px; padding-bottom:5px; }
+        .step-card { background: var(--card); border-radius: 8px; margin-bottom: 10px; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .step-header { padding: 12px 15px; display: flex; align-items: center; cursor: pointer; }
+        .step-time { font-family: monospace; font-weight: bold; color: var(--gold); min-width: 110px; font-size: 0.85rem; }
+        .step-name { flex-grow: 1; font-weight: 500; font-size: 0.95rem; }
+        .step-body { padding: 15px; display: none; border-top: 1px dashed #ddd; background: #fffdf9; }
+        .step-body.active { display: block; }
+        .section-title { font-weight: bold; font-size: 0.85rem; margin: 10px 0 5px; color: #777; border-bottom: 1px solid #eee; }
+        .edit-input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .todo-item { display: flex; align-items: center; margin: 5px 0; font-size: 0.9rem; }
+        .exp-list-item { display: flex; justify-content: space-between; background: #eee; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; font-size: 0.85rem; }
+        .nav { position: fixed; bottom: 0; width: 100%; background: #fff; display: flex; border-top: 1px solid var(--gold); height: 65px; z-index: 1000; }
+        .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.8rem; cursor: pointer; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div id="status-text">雪國之旅 2025</div>
+    <div><button class="btn" onclick="toggleEdit()">編輯模式</button></div>
+</div>
+
+<div id="main-view" class="content"></div>
+<div id="summary-view" class="content hidden">
+    <div class="day-title">旅途總結算</div>
+    <div id="sum-stats"></div>
+</div>
+
+<div class="nav">
+    <div class="nav-btn" onclick="showTab('main')">🗓 行程列表</div>
+    <div class="nav-btn" onclick="showTab('sum')">📊 總結算</div>
+</div>
+
+<script>
+    const rate = 0.22;
+    let isEditMode = false;
+    
+    const defaultTrip = [
+        { date: "3/1 (日)", steps: [
+            { time: "11:30 - 14:35", name: "桃機 Check-in ➔ 起飛", detail: "抵達機場櫃檯，確認網卡與保險。", todos: ["檢查護照", "領網卡"], map: "桃園機場", expenses: [] },
+            { time: "18:45 - 20:11", name: "抵達仙台機場 ➔ 出發仙台車站", detail: "領行李出關，購買 JR Pass 或儲值 Suica。", todos: ["買JR Pass"], map: "仙台機場", expenses: [] },
+            { time: "20:35 - 21:25", name: "抵達仙台車站 ➔ 轉乘山形高速巴士", detail: "仙台站西口搭乘。", todos: ["找巴士站"], map: "仙台駅", expenses: [] },
+            { time: "22:45 - 23:00", name: "抵達山形車站 ➔ 入住大和 ROYNET", detail: "辦理入住休息。", todos: ["Check-in"], map: "山形站前大和ROYNET酒店", expenses: [] }
+        ]},
+        { date: "3/2 (一)", steps: [
+            { time: "06:50 - 08:00", name: "山形站 ➔ 抵達藏王溫泉雪場", detail: "搭乘巴士。抵達後寄行李、取雪具、會面教練。", todos: ["租雪具", "會面教練"], map: "藏王溫泉", expenses: [] },
+            { time: "13:00 - 16:30", name: "上山滑雪練功 ➔ 下山回飯店", detail: "滑雪訓練。入住高宮哈蒙德酒店。", todos: ["滑雪錄影"], map: "高宮哈蒙德酒店", expenses: [] },
+            { time: "18:00 - 21:00", name: "晚餐 ➔ 飯店休息", detail: "泡溫泉回血。", todos: ["泡溫泉"], map: "高宮哈蒙德酒店", expenses: [] }
+        ]},
+        { date: "3/3 (二)", steps: [
+            { time: "07:00 - 09:00", name: "出門 ➔ 取雪具會面教練 ➔ 上山", detail: "全日滑雪訓練。", todos: ["練習 S-turn"], map: "蔵王温泉スキー場", expenses: [] },
+            { time: "16:30 - 21:00", name: "滑雪結束 ➔ 晚餐 ➔ 飯店休息", detail: "回飯店換裝，休息。", todos: ["肌肉舒緩"], map: "高宮哈蒙德酒店", expenses: [] }
+        ]},
+        { date: "3/4 (三)", steps: [
+            { time: "07:00 - 11:30", name: "出門 ➔ 山形站 ➔ 銀山溫泉", detail: "轉搭公車前往銀山溫泉閑晃。", todos: ["拍銀山雪景"], map: "銀山温泉", expenses: [] },
+            { time: "11:30 - 12:30", name: "銀山午餐 ➔ 下山回山形", detail: "山形市區逛街、晚餐。", todos: ["買伴手禮"], map: "山形市", expenses: [] },
+            { time: "18:30 - 18:55", name: "買車票 ➔ 末班車回藏王溫泉", detail: "注意末班車時間。", todos: ["買回程票"], map: "山形駅", expenses: [] }
+        ]},
+        { date: "3/5 (四)", steps: [
+            { time: "08:00 - 09:00", name: "出門 ➔ 取雪具 ➔ 上山滑雪", detail: "自主練習。", todos: ["複習教練動作"], map: "蔵王温泉スキー場", expenses: [] },
+            { time: "16:30 - 21:00", name: "滑雪結束 ➔ 晚餐 ➔ 飯店休息", detail: "最後一晚在藏王溫泉。", todos: ["收行李"], map: "高宮哈蒙德酒店", expenses: [] }
+        ]},
+        { date: "3/6 (五)", steps: [
+            { time: "08:00 - 10:12", name: "下山 ➔ 山形車站 ➔ JR 往仙台", detail: "搭乘 10:12 的 JR 前往仙台。", todos: ["注意巴士時間"], map: "山形駅", expenses: [] },
+            { time: "11:30 - 18:00", name: "抵達仙台 ➔ 午餐 ➔ 市區逛街", detail: "仙台市區購物。", todos: ["找美食"], map: "仙台駅", expenses: [] },
+            { time: "18:00 - 21:00", name: "朋友聚餐 ➔ 入住海茵娜飯店", detail: "海茵娜飯店仙台國分町。", todos: ["Check-in"], map: "海茵娜飯店仙台國分町", expenses: [] }
+        ]},
+        { date: "3/7 (六)", steps: [
+            { time: "07:30 - 08:30", name: "出門 ➔ 仙台站集合 ➔ 跟團", detail: "前往狐狸村與松島一日遊。", todos: ["準時抵達"], map: "JR仙台駅", expenses: [] },
+            { time: "10:00 - 17:00", name: "狐狸村 ➔ 松島 ➔ 回仙台", detail: "拍狐狸、吃松島牡蠣。", todos: ["買狐狸吊飾"], map: "蔵王狐狸村", expenses: [] },
+            { time: "17:30 - 21:00", name: "晚餐 ➔ 市區閒晃 ➔ 回飯店", detail: "休息。", todos: ["記帳"], map: "海茵娜飯店仙台國分町", expenses: [] }
+        ]},
+        { date: "3/8 (日)", steps: [
+            { time: "09:30 - 12:30", name: "出門 ➔ 逛街 ➔ 午餐", detail: "仙台最後採買。", todos: ["收好戰利品"], map: "仙台", expenses: [] },
+            { time: "12:30 - 14:30", name: "拆夥 ➔ 金蛇水神社 ➔ 前往岩沼", detail: "參拜金蛇水神社。", todos: ["買御守"], map: "金蛇水神社", expenses: [] },
+            { time: "15:21 - 18:30", name: "岩沼 ➔ 郡山 ➔ 抵達會津若松", detail: "搭新幹線轉 JR 抵達會津。", todos: ["轉乘確認"], map: "会津若松駅", expenses: [] },
+            { time: "19:00 - 20:30", name: "入住飯店 ➔ 晚餐 ➔ 休息", detail: "宿會津若松。", todos: ["Check-in"], map: "会津若松", expenses: [] }
+        ]},
+        { date: "3/9 (一)", steps: [
+            { time: "05:20 - 07:21", name: "出門 ➔ 會津若松站 ➔ 只見線", detail: "搭首班車 05:50 出發。", todos: ["準時起床"], map: "会津若松駅", expenses: [] },
+            { time: "09:00 - 11:10", name: "展望台拍照 ➔ 回會津宮下", detail: "拍 09:30 的火車。", todos: ["拍好鐵橋"], map: "第一只見川橋梁展望台", expenses: [] },
+            { time: "11:10 - 20:00", name: "回會津若松 ➔ 喜多方拉麵 ➔ 晚餐", detail: "吃拉麵、市區閒晃。", todos: ["吃喜多方拉麵"], map: "喜多方駅", expenses: [] }
+        ]},
+        { date: "3/10 (二)", steps: [
+            { time: "08:00 - 13:10", name: "出門 ➔ 貓魔滑雪場 ➔ 滑雪結束", detail: "雪場練功。", todos: ["滑雪練習"], map: "貓魔滑雪場", expenses: [] },
+            { time: "15:52 - 18:50", name: "搭車往鬼怒川 ➔ 抵達日光站", detail: "搭 AIZU Mount Express 直達。", todos: ["取行李"], map: "東武日光駅", expenses: [] },
+            { time: "19:00 - 21:00", name: "入住日光飯店 ➔ 晚餐 ➔ 休息", detail: "休息。", todos: ["Check-in"], map: "日光", expenses: [] }
+        ]},
+        { date: "3/11 (三)", steps: [
+            { time: "09:30 - 11:00", name: "東照宮 ➔ 二荒山神社 ➔ 往東京", detail: "世界遺產參拜。", todos: ["拍東照宮"], map: "日光東照宮", expenses: [] },
+            { time: "13:00 - 18:00", name: "抵達東京 ➔ 小網神社 ➔ 美術館", detail: "小網神社洗錢、墨田北齋美術館。", todos: ["洗錢"], map: "小網神社", expenses: [] },
+            { time: "18:00 - 21:00", name: "一番街 ➔ 入住飯店 ➔ 休息", detail: "晚餐。", todos: ["Check-in"], map: "新宿", expenses: [] }
+        ]},
+        { date: "3/12 (四)", steps: [
+            { time: "09:30 - 13:55", name: "地下宮殿 ➔ 春日部 ➔ 回東京", detail: "12:30 地下宮殿報到。", todos: ["地下宮殿預約單"], map: "首都圏外郭放水路", expenses: [] },
+            { time: "14:00 - 21:00", name: "妙義神社 ➔ 中野 ➔ 晚餐 ➔ 休息", detail: "中野百老匯挖寶。", todos: ["買公仔"], map: "中野百老匯", expenses: [] }
+        ]},
+        { date: "3/13 (五)", steps: [
+            { time: "09:30 - 12:00", name: "寄行李 ➔ 吉祥寺 ➔ 閒逛", detail: "行李放新宿。", todos: ["寄物櫃位置"], map: "吉祥寺", expenses: [] },
+            { time: "12:00 - 17:00", name: "阿佐古神明宮 ➔ 中野 ➔ 下北澤", detail: "大採買。", todos: ["買御守"], map: "阿佐ヶ谷神明宮", expenses: [] },
+            { time: "18:39 - 22:30", name: "新宿 N'EX ➔ 抵達機場 ➔ 飛機", detail: "回家。", todos: ["護照準備"], map: "成田機場", expenses: [] }
+        ]}
+    ];
+
+    let tripData = JSON.parse(localStorage.getItem('trip_full_db_v4')) || defaultTrip;
+
+    function renderList() {
+        const container = document.getElementById('main-view');
+        container.innerHTML = '';
+        tripData.forEach((day, dIdx) => {
+            let html = `<div class="day-group"><div class="day-title"><span>${day.date}</span></div>`;
+            day.steps.forEach((s, sIdx) => {
+                html += `
+                <div class="step-card">
+                    <div class="step-header" onclick="toggleBody(${dIdx}, ${sIdx})">
+                        <div class="step-time">${s.time}</div>
+                        <div class="step-name">${s.name}</div>
+                    </div>
+                    <div class="step-body" id="body-${dIdx}-${sIdx}">
+                        ${isEditMode ? renderEditor(dIdx, sIdx, s) : renderViewer(dIdx, sIdx, s)}
+                    </div>
+                </div>`;
+            });
+            html += `</div>`;
+            container.innerHTML += html;
+        });
+        localStorage.setItem('trip_full_db_v4', JSON.stringify(tripData));
+    }
+
+    function renderViewer(dIdx, sIdx, s) {
+        return `
+            <div class="section-title">📝 詳細備註</div>
+            <div style="font-size:0.9rem; white-space:pre-wrap;">${s.detail}</div>
+            <div class="section-title">✅ 代辦</div>
+            <div>${s.todos.map(t => `<div class="todo-item"><input type="checkbox"> ${t}</div>`).join('')}</div>
+            <div class="section-title">💸 記帳</div>
+            <div id="exp-list-${dIdx}-${sIdx}">${s.expenses.map(e => `<div class="exp-list-item"><span>${e.cat}: ${e.amt} JPY</span><span>$${Math.round(e.amt * rate)}</span></div>`).join('')}</div>
+            <a class="btn" style="display:inline-block; margin-top:10px; text-decoration:none;" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.map)}" target="_blank">📍 地圖搜尋</a>
+        `;
+    }
+
+    function renderEditor(dIdx, sIdx, s) {
+        return `
+            時間: <input class="edit-input" value="${s.time}" onchange="update(${dIdx}, ${sIdx}, 'time', this.value)">
+            名稱: <input class="edit-input" value="${s.name}" onchange="update(${dIdx}, ${sIdx}, 'name', this.value)">
+            備註: <textarea class="edit-input" onchange="update(${dIdx}, ${sIdx}, 'detail', this.value)">${s.detail}</textarea>
+            記帳: <div style="display:flex;gap:4px;"><input id="amt-${dIdx}-${sIdx}" type="number" placeholder="金額" style="width:70px"><input id="cat-${dIdx}-${sIdx}" type="text" placeholder="類別" style="width:70px"><button onclick="addExp(${dIdx},${sIdx})">加</button></div>
+        `;
+    }
+
+    function toggleBody(dIdx, sIdx) { document.getElementById(`body-${dIdx}-${sIdx}`).classList.toggle('active'); }
+    function toggleEdit() { isEditMode = !isEditMode; renderList(); }
+    function update(dIdx, sIdx, key, val) { tripData[dIdx].steps[sIdx][key] = val; localStorage.setItem('trip_full_db_v4', JSON.stringify(tripData)); }
+    function addExp(dIdx, sIdx) {
+        const amt = document.getElementById(`amt-${dIdx}-${sIdx}`).value;
+        const cat = document.getElementById(`cat-${dIdx}-${sIdx}`).value;
+        if(amt) { tripData[dIdx].steps[sIdx].expenses.push({cat: cat||'一般', amt: parseFloat(amt)}); renderList(); }
+    }
+    function showTab(tab) {
+        document.getElementById('main-view').classList.toggle('hidden', tab !== 'main');
+        document.getElementById('summary-view').classList.toggle('hidden', tab !== 'sum');
+        if(tab === 'sum') renderSum();
+    }
+    function renderSum() {
+        let totals = {};
+        tripData.forEach(d => d.steps.forEach(s => s.expenses.forEach(e => { totals[e.cat] = (totals[e.cat] || 0) + e.amt; })));
+        let html = '';
+        for(let cat in totals) { html += `<div class="exp-list-item"><span>${cat}</span><span>￥${totals[cat]} / $${Math.round(totals[cat]*rate)}</span></div>`; }
+        document.getElementById('sum-stats').innerHTML = html || '尚無資料';
+    }
+    renderList();
+</script>
+</body>
+</html>
